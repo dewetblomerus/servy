@@ -4,7 +4,9 @@ defmodule Servy.Handler do
   @pages_path Path.expand("../../pages", __DIR__)
 
   import Servy.FileHandler, only: [handle_file: 2]
+  import Servy.Parser, only: [parse: 1]
   alias Servy.Conv
+  alias Servy.BearController
 
   def handle(request) do
     request
@@ -17,18 +19,6 @@ defmodule Servy.Handler do
   end
 
   def log(%Conv{} = conv), do: IO.inspect(conv)
-
-  def parse(request) do
-    [method, path, _] = request
-      |> String.split("\n")
-      |> List.first
-      |> String.split(" ")
-
-    %Conv{
-      method: method,
-      path: path,
-    }
-  end
 
   def rewrite_path(%Conv{ path: "/wildlife" } = conv) do
     %{ conv | path: "/wildthings" }
@@ -52,7 +42,7 @@ defmodule Servy.Handler do
   end
 
   def route(%Conv{ method: "GET", path: "/bears" } = conv) do
-    %{ conv | status: 200, resp_body: "Smokey, Paddington, Poo" }
+    BearController.index(conv)
   end
 
   def route(%Conv{ method: "GET", path: "/bears/new" } = conv) do
@@ -70,7 +60,8 @@ defmodule Servy.Handler do
   end
 
   def route(%Conv{ method: "GET", path: "/bears/" <> id } = conv) do
-    %{ conv | status: 200, resp_body: "Bear #{id}" }
+    params = Map.put(conv.params, "id", id)
+    BearController.show(conv, params)
   end
 
   def route(%Conv{ method: "DELETE", path: "/bears" <> _id } = conv) do
@@ -84,29 +75,22 @@ defmodule Servy.Handler do
     |> handle_file(conv)
   end
 
+  def route(%Conv{ method: "POST", path: "/bears" } = conv) do
+    BearController.create(conv, conv.params)
+  end
+
   def route(%Conv{ path: path } = conv) do
     %{ conv | status: 404, resp_body: "No #{path} here" }
   end
 
   def format_response(conv) do
     """
-    HTTP/1.1 #{conv.status} #{status_reason(conv.status)}
+    HTTP/1.1
     Content-Type: text/html
     Content-Length: 20
 
     #{conv.resp_body}
     """
-  end
-
-  defp status_reason(code) do
-    %{
-      200 => "OK",
-      201 => "Created",
-      401 => "Unauthorized",
-      403 => "Forbidden",
-      404 => "Not Found",
-      500 => "Internal Server Error"
-    }[code]
   end
 end
 
@@ -141,7 +125,7 @@ Accept: */*
 |> IO.puts
 
 """
-GET /bears/1 HTTP/1.1
+GET /bears/2 HTTP/1.1
 Host: example.com
 User-Agent: ExampleBrowser/1.0
 Accept: */*
@@ -151,7 +135,7 @@ Accept: */*
 |> IO.puts
 
 """
-DELETE /bears/1 HTTP/1.1
+DELETE /bears/3 HTTP/1.1
 Host: example.com
 User-Agent: ExampleBrowser/1.0
 Accept: */*
@@ -171,7 +155,7 @@ Accept: */*
 |> IO.puts
 
 """
-GET /bears?id=1 HTTP/1.1
+GET /bears?id=5 HTTP/1.1
 Host: example.com
 User-Agent: ExampleBrowser/1.0
 Accept: */*
@@ -196,6 +180,19 @@ Host: example.com
 User-Agent: ExampleBrowser/1.0
 Accept: */*
 
+"""
+|> Servy.Handler.handle
+|> IO.puts
+
+"""
+POST /bears HTTP/1.1
+Host: example.com
+User-Agent: ExampleBrowser/1.0
+Accept: */*
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 21
+
+name=Baloo&type=Brown
 """
 |> Servy.Handler.handle
 |> IO.puts
